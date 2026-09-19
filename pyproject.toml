@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flytbase-drone-security-agent"
+version = "1.0.0"
+description = "Autonomous Drone Security Analyst Agent for perimeter monitoring, real-time threat detection, and cross-domain frame indexing"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Proprietary / FlytBase Assignment"}
+authors = [
+    {name = "AI Engineer Candidate", email = "candidate@example.com"}
+]
+dependencies = [
+    "tabulate>=0.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+vision = [
+    "opencv-python>=4.9.0.80",
+    "transformers>=4.40.0",
+    "torch>=2.2.0",
+    "langchain>=0.2.0",
+]

@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlytBase Drone Security Analyst Agent - Interactive Dashboard</title>
+    <style>
+        :root {
+            --bg-base: #0b0f19;
+            --bg-card: #111827;
+            --bg-card-hover: #1f2937;
+            --border: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent-cyan: #06b6d4;
+            --accent-blue: #3b82f6;
+            --alert-red: #ef4444;
+            --alert-amber: #f59e0b;
+            --status-green: #10b981;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; }
+        body { background-color: var(--bg-base); color: var(--text-main); min-height: 100vh; display: flex; flex-direction: column; }
+        header { background: #0f172a; border-bottom: 1px solid var(--border); padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; }
+        .brand { display: flex; align-items: center; gap: 0.75rem; font-size: 1.25rem; font-weight: 700; color: var(--accent-cyan); letter-spacing: 0.5px; }
+        .badge { font-size: 0.75rem; padding: 0.25rem 0.6rem; border-radius: 9999px; background: rgba(6,182,212,0.15); color: var(--accent-cyan); border: 1px solid rgba(6,182,212,0.3); }
+        
+        main { flex: 1; display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 1.5rem; padding: 1.5rem 2rem; max-width: 1600px; margin: 0 auto; width: 100%; }
+        
+        .panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem; }
+        .panel-title { font-size: 1rem; font-weight: 600; color: var(--text-main); display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 0.75rem; }
+        
+        /* HUD Telemetry Grid */
+        .hud-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; }
+        .hud-cell { background: #090d16; border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; text-align: center; }
+        .hud-label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        .hud-val { font-size: 1.1rem; font-weight: 700; margin-top: 0.25rem; color: var(--accent-cyan); }
+        
+        /* Frame Display */
+        .frame-viewport { background: #000; border: 1px solid #334155; border-radius: 8px; height: 260px; position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; padding: 1rem; }
+        .grid-overlay { position: absolute; inset: 0; background-image: linear-gradient(rgba(6,182,212,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(6,182,212,0.05) 1px, transparent 1px); background-size: 30px 30px; pointer-events: none; }
+        .target-reticle { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80px; height: 80px; border: 1px dashed rgba(6,182,212,0.5); border-radius: 50%; pointer-events: none; }
+        .target-reticle::before { content: ""; position: absolute; top: 50%; left: -10px; right: -10px; height: 1px; background: rgba(6,182,212,0.4); }
+        .target-reticle::after { content: ""; position: absolute; left: 50%; top: -10px; bottom: -10px; width: 1px; background: rgba(6,182,212,0.4); }
+        
+        .feed-header { display: flex; justify-content: space-between; font-family: monospace; font-size: 0.85rem; color: var(--accent-cyan); z-index: 2; }
+        .feed-footer { z-index: 2; background: rgba(15,23,42,0.85); backdrop-filter: blur(4px); border: 1px solid var(--border); padding: 0.6rem 0.8rem; border-radius: 6px; font-size: 0.85rem; }
+
+        /* Controls */
+        .controls { display: flex; gap: 0.5rem; align-items: center; }
+        button { background: #1e293b; color: var(--text-main); border: 1px solid #334155; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all 0.2s; }
+        button:hover { background: #334155; border-color: var(--accent-cyan); }
+        button.primary { background: var(--accent-blue); border-color: var(--accent-blue); }
+        button.primary:hover { background: #2563eb; }
+
+        /* Logs & Alerts */
+        .stream-box { display: flex; flex-direction: column; gap: 0.5rem; max-height: 280px; overflow-y: auto; padding-right: 0.5rem; }
+        .log-item { background: #090d16; border-left: 3px solid var(--accent-blue); padding: 0.6rem 0.8rem; border-radius: 4px; font-size: 0.85rem; }
+        .log-item.alert-ALERT { border-left-color: var(--alert-amber); background: rgba(245,158,11,0.08); }
+        .log-item.alert-CRITICAL { border-left-color: var(--alert-red); background: rgba(239,68,68,0.12); }
+        .log-item.alert-WARNING { border-left-color: #eab308; }
+
+        /* Interactive Q&A */
+        .qa-input-box { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+        .qa-input-box input { flex: 1; background: #090d16; border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem 0.8rem; color: var(--text-main); font-size: 0.9rem; }
+        .qa-input-box input:focus { outline: none; border-color: var(--accent-cyan); }
+        .quick-queries { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
+        .tag-btn { font-size: 0.75rem; padding: 0.25rem 0.5rem; border-radius: 4px; background: #1e293b; color: var(--text-muted); cursor: pointer; border: 1px solid var(--border); }
+        .tag-btn:hover { color: var(--text-main); border-color: var(--accent-cyan); }
+        .qa-response { background: #090d16; border: 1px solid var(--border); border-radius: 6px; padding: 0.8rem; min-height: 90px; font-size: 0.85rem; line-height: 1.4; color: #cbd5e1; white-space: pre-line; }
+
+        /* Executive Summary Banner */
+        .summary-banner { background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.25); border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.85rem; line-height: 1.4; color: #e2e8f0; }
+        .summary-label { font-weight: 700; color: var(--accent-cyan); margin-bottom: 0.25rem; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.5px; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg-card); }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="brand">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+            FlytBase Drone Security Analyst Agent
+        </div>
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <span class="badge" id="live-indicator">LIVE MISSION ACTIVE</span>
+            <span style="font-size: 0.85rem; color: var(--text-muted);" id="clock-display">12:00:00</span>
+        </div>
+    </header>
+
+    <main>
+        <!-- LEFT COLUMN: Live Visual Feed & Telemetry -->
+        <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+            
+            <div class="panel">
+                <div class="panel-title">
+                    <span>Autonomous Gimbal Feed & HUD</span>
+                    <span style="font-size: 0.8rem; color: var(--text-muted);" id="frame-counter">Frame 02 of 12</span>
+                </div>
+
+                <div class="frame-viewport">
+                    <div class="grid-overlay"></div>
+                    <div class="target-reticle"></div>
+                    <div class="feed-header">
+                        <span id="feed-cam">CAM: WIDE_RGB [30 FPS]</span>
+                        <span id="feed-coords">LAT: 37.775150 LON: -122.418900</span>
+                    </div>
+                    <div class="feed-footer">
+                        <div style="font-weight: 600; color: var(--text-main); margin-bottom: 0.2rem;" id="feed-loc">Location: Garage</div>
+                        <div style="color: #cbd5e1;" id="feed-desc">Blue Ford F150 spotted at garage entrance. Vehicle engine idling near service door.</div>
+                    </div>
+                </div>
+
+                <div class="hud-grid">
+                    <div class="hud-cell">
+                        <div class="hud-label">Altitude</div>
+                        <div class="hud-val" id="hud-alt">18.5 m</div>
+                    </div>
+                    <div class="hud-cell">
+                        <div class="hud-label">Battery</div>
+                        <div class="hud-val" id="hud-batt" style="color: var(--status-green);">95.0%</div>
+                    </div>
+                    <div class="hud-cell">
+                        <div class="hud-label">Heading</div>
+                        <div class="hud-val" id="hud-hdg">088°</div>
+                    </div>
+                    <div class="hud-cell">
+                        <div class="hud-label">Dock Status</div>
+                        <div class="hud-val" id="hud-dock" style="font-size: 0.95rem;">AIRBORNE</div>
+                    </div>
+                </div>
+
+                <div class="controls">
+                    <button onclick="prevFrame()">&#9664; Prev Frame</button>
+                    <button class="primary" id="play-btn" onclick="togglePlay()">Auto Play</button>
+                    <button onclick="nextFrame()">Next Frame &#9654;</button>
+                    <span style="flex:1;"></span>
+                    <button onclick="resetPatrol()">Reset Patrol</button>
+                </div>
+            </div>
+
+            <!-- Executive 1-Sentence Summary -->
+            <div class="summary-banner">
+                <div class="summary-label">Bonus 1: Executive 1-Sentence Video Session Summary</div>
+                <div id="exec-summary">
+                    Over 12 monitored patrol frames across 7 property zones, the Drone Security Analyst Agent logged 6 distinct entities (notably a blue Ford F150 entered twice), identified suspicious midnight loitering at Main Gate, and safely managed a low-battery RTH procedure.
+                </div>
+            </div>
+
+        </div>
+
+        <!-- RIGHT COLUMN: Events Stream & Interactive Q&A -->
+        <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+            
+            <!-- Real-Time Alerts & Logs -->
+            <div class="panel" style="flex: 1;">
+                <div class="panel-title">
+                    <span>Perception Log Stream & Security Alerts</span>
+                    <span class="badge" id="alert-count-badge">5 Alerts Logged</span>
+                </div>
+                <div class="stream-box" id="log-stream">
+                    <!-- Dynamic Log Items -->
+                </div>
+            </div>
+
+            <!-- Bonus 2: Interactive Natural Language Q&A -->
+            <div class="panel">
+                <div class="panel-title">
+                    <span>Bonus 2: Interactive Natural Language Q&A</span>
+                    <span style="font-size: 0.75rem; color: var(--accent-cyan);">SQLite + FTS5</span>
+                </div>
+                
+                <div class="qa-response" id="qa-output">
+Click a sample query below or type your question to interrogate the indexed property database.
+                </div>
+
+                <div class="quick-queries">
+                    <span class="tag-btn" onclick="askPredefined('show all truck events')">show all truck events</span>
+                    <span class="tag-btn" onclick="askPredefined('what objects were in the video?')">what objects were in the video?</span>
+                    <span class="tag-btn" onclick="askPredefined('how many times did the blue Ford F150 enter?')">how many times did the blue Ford F150 enter?</span>
+                    <span class="tag-btn" onclick="askPredefined('were there any alerts at midnight?')">were there any alerts at midnight?</span>
+                </div>
+
+                <div class="qa-input-box">
+                    <input type="text" id="user-query" placeholder="Ask about trucks, gate events, midnight alerts..." onkeypress="handleKey(event)">
+                    <button class="primary" onclick="submitQuery()">Query</button>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <script>
+        const FRAMES = [
+            {
+                id: 1, time: "11:58", loc: "Docking Station", alt: "2.0 m", batt: "98.0%", hdg: "045°", dock: "AIRBORNE", cam: "WIDE_RGB",
+                coords: "37.774929, -122.419416", desc: "Drone takes off from Docking Station. Sensor calibration complete, clear perimeter view.",
+                log: "Drone takes off from Docking Station at docking station, 11:58.", alert: null
+            },
+            {
+                id: 2, time: "12:00", loc: "Garage", alt: "18.5 m", batt: "95.0%", hdg: "088°", dock: "AIRBORNE", cam: "WIDE_RGB",
+                coords: "37.775150, -122.418900", desc: "Blue Ford F150 spotted at garage entrance. Vehicle engine idling near service door.",
+                log: "Blue Ford F150 spotted at garage, 12:00.", alert: null
+            },
+            {
+                id: 3, time: "12:15", loc: "Loading Bay", alt: "20.0 m", batt: "91.0%", hdg: "130°", dock: "AIRBORNE", cam: "WIDE_RGB",
+                coords: "37.775400, -122.418200", desc: "White Mercedes Sprinter delivery van parked at loading dock. Cargo bay doors open, worker unloading boxes.",
+                log: "White Mercedes SPRINTER detected at loading bay, 12:15.", alert: null
+            },
+            {
+                id: 4, time: "14:30", loc: "Perimeter Fence North", alt: "22.0 m", batt: "84.0%", hdg: "270°", dock: "AIRBORNE", cam: "WIDE_RGB",
+                coords: "37.775800, -122.419100", desc: "North fence line clear. Tree branches slightly swaying, barbed wire intact with no breach indications.",
+                log: "North fence line clear at perimeter fence north, 14:30.", alert: null
+            },
+            {
+                id: 5, time: "16:15", loc: "Garage", alt: "19.0 m", batt: "78.0%", hdg: "092°", dock: "AIRBORNE", cam: "WIDE_RGB",
+                coords: "37.775150, -122.418900", desc: "Blue Ford F150 truck re-enters property, parked in rear garage lot near employee exit.",
+                log: "Blue Ford F150 spotted at garage, 16:15.",
+                alert: { severity: "WARNING", msg: "Alert: Blue Ford F150 re-entered property (visit #2 today) at garage, 16:15 [Rule: REPEAT_VEHICLE_ACTIVITY]" }
+            },
+            {
+                id: 6, time: "18:45", loc: "Fuel Depot", alt: "17.0 m", batt: "69.0%", hdg: "180°", dock: "AIRBORNE", cam: "DUSK_RGB",
+                coords: "37.774500, -122.418500", desc: "Fuel depot containment area secure. Pressure gauges nominal, no personnel or vehicles detected.",
+                log: "Fuel depot containment area secure at fuel depot, 18:45.", alert: null
+            },
+            {
+                id: 7, time: "23:55", loc: "Main Gate", alt: "15.0 m", batt: "60.0%", hdg: "210°", dock: "AIRBORNE", cam: "THERMAL_IR",
+                coords: "37.774800, -122.420200", desc: "Thermal camera active. Main gate locked, floodlights operational, asphalt cool.",
+                log: "Thermal camera active at main gate, 23:55.", alert: null
+            },
+            {
+                id: 8, time: "00:01", loc: "Main Gate", alt: "15.0 m", batt: "57.0%", hdg: "215°", dock: "AIRBORNE", cam: "THERMAL_IR",
+                coords: "37.774800, -122.420200", desc: "Person loitering at main gate, 00:01. Subject wearing dark hooded jacket, standing near pedestrian turnstile.",
+                log: "Person loitering at main gate, 00:01.",
+                alert: { severity: "ALERT", msg: "Alert: Person loitering at main gate, 00:01 [Rule: AFTER_HOURS_LOITERING]" }
+            },
+            {
+                id: 9, time: "00:02", loc: "Main Gate", alt: "14.5 m", batt: "55.0%", hdg: "218°", dock: "AIRBORNE", cam: "THERMAL_IR",
+                coords: "37.774800, -122.420200", desc: "Person loitering at main gate continues surveillance. Subject peering through gate slats, carrying unidentified backpack.",
+                log: "Person loitering at main gate, 00:02.",
+                alert: { severity: "ALERT", msg: "Alert: Person loitering at main gate, 00:02 [Rule: AFTER_HOURS_LOITERING]" }
+            },
+            {
+                id: 10, time: "00:03", loc: "Main Gate", alt: "14.0 m", batt: "52.0%", hdg: "220°", dock: "AIRBORNE", cam: "THERMAL_IR",
+                coords: "37.774800, -122.420200", desc: "Unauthorized person attempting manual override on main gate keypad, suspicious loitering over 3 minutes after midnight.",
+                log: "Person loitering at main gate, 00:03.",
+                alert: { severity: "CRITICAL", msg: "Alert: Unauthorized person attempting perimeter breach at main gate, 00:03 [Rule: UNAUTHORIZED_PERIMETER_BREACH]" }
+            },
+            {
+                id: 11, time: "00:06", loc: "North Gate", alt: "16.0 m", batt: "46.0%", hdg: "350°", dock: "AIRBORNE", cam: "THERMAL_IR",
+                coords: "37.775950, -122.419800", desc: "Uniformed security guard on foot patrol at North Gate carrying tactical flashlight, scanning ID badge at checkpoint.",
+                log: "Uniformed security guard detected at north gate, 00:06.", alert: null
+            },
+            {
+                id: 12, time: "00:10", loc: "Fuel Depot", alt: "19.0 m", batt: "16.5%", hdg: "175°", dock: "RETURNING", cam: "THERMAL_IR",
+                coords: "37.774500, -122.418500", desc: "Drone initiated Return-To-Home (RTH). Telemetry warning: battery level at 16.5% while airborne over Fuel Depot.",
+                log: "Critical Battery Warning (16.5%) detected at fuel depot, 00:10.",
+                alert: { severity: "CRITICAL", msg: "Alert: Critical drone battery alert (16.5%) over fuel depot, 00:10 [Rule: DRONE_LOW_BATTERY_RTH]" }
+            }
+        ];
+
+        let currentIndex = 1; // Start at frame 2
+        let autoPlayInterval = null;
+
+        function renderFrame(index) {
+            const f = FRAMES[index];
+            document.getElementById("frame-counter").innerText = `Frame ${String(f.id).padStart(2, '0')} of ${FRAMES.length}`;
+            document.getElementById("clock-display").innerText = f.time + ":00";
+            document.getElementById("feed-cam").innerText = `CAM: ${f.cam} [30 FPS]`;
+            document.getElementById("feed-coords").innerText = f.coords;
+            document.getElementById("feed-loc").innerText = `Location: ${f.loc}`;
+            document.getElementById("feed-desc").innerText = f.desc;
+
+            document.getElementById("hud-alt").innerText = f.alt;
+            const battElem = document.getElementById("hud-batt");
+            battElem.innerText = f.batt;
+            const battVal = parseFloat(f.batt);
+            battElem.style.color = battVal < 20 ? "var(--alert-red)" : (battVal < 50 ? "var(--alert-amber)" : "var(--status-green)");
+
+            document.getElementById("hud-hdg").innerText = f.hdg;
+            document.getElementById("hud-dock").innerText = f.dock;
+
+            // Render log stream up to this frame
+            const streamBox = document.getElementById("log-stream");
+            streamBox.innerHTML = "";
+            let alertCount = 0;
+
+            for (let i = 0; i <= index; i++) {
+                const item = FRAMES[i];
+                const logDiv = document.createElement("div");
+                logDiv.className = "log-item";
+                logDiv.innerHTML = `<strong>[${item.time}]</strong> Frame #${String(item.id).padStart(2, '0')} (${item.loc}): ${item.log}`;
+                streamBox.appendChild(logDiv);
+
+                if (item.alert) {
+                    alertCount++;
+                    const alertDiv = document.createElement("div");
+                    alertDiv.className = `log-item alert-${item.alert.severity}`;
+                    alertDiv.innerHTML = `<strong>[${item.alert.severity}]</strong> ${item.alert.msg}`;
+                    streamBox.appendChild(alertDiv);
+                }
+            }
+            streamBox.scrollTop = streamBox.scrollHeight;
+            document.getElementById("alert-count-badge").innerText = `${alertCount} Alerts Logged`;
+        }
+
+        function nextFrame() {
+            if (currentIndex < FRAMES.length - 1) {
+                currentIndex++;
+                renderFrame(currentIndex);
+            } else if (autoPlayInterval) {
+                togglePlay();
+            }
+        }
+
+        function prevFrame() {
+            if (currentIndex > 0) {
+                currentIndex--;
+                renderFrame(currentIndex);
+            }
+        }
+
+        function togglePlay() {
+            const btn = document.getElementById("play-btn");
+            if (autoPlayInterval) {
+                clearInterval(autoPlayInterval);
+                autoPlayInterval = null;
+                btn.innerText = "Auto Play";
+                btn.className = "primary";
+            } else {
+                if (currentIndex >= FRAMES.length - 1) currentIndex = 0;
+                autoPlayInterval = setInterval(nextFrame, 1500);
+                btn.innerText = "Pause";
+                btn.className = "";
+            }
+        }
+
+        function resetPatrol() {
+            if (autoPlayInterval) togglePlay();
+            currentIndex = 0;
+            renderFrame(currentIndex);
+        }
+
+        // Q&A Simulator
+        function askPredefined(query) {
+            document.getElementById("user-query").value = query;
+            submitQuery();
+        }
+
+        function handleKey(e) {
+            if (e.key === "Enter") submitQuery();
+        }
+
+        function submitQuery() {
+            const q = document.getElementById("user-query").value.trim().toLowerCase();
+            const output = document.getElementById("qa-output");
+
+            if (!q) return;
+
+            if (q.includes("truck")) {
+                output.innerText = "Found 2 indexed truck event(s):\n- Frame #2 [12:00 at Garage]: Blue Ford F150 spotted at garage, 12:00.\n- Frame #5 [16:15 at Garage]: Blue Ford F150 spotted at garage, 16:15.";
+            } else if (q.includes("what objects") || q.includes("list objects")) {
+                output.innerText = "The following 6 distinct objects/entities were identified across the video frames:\n- Person loitering (person, detected 3 time(s))\n- Blue Ford F150 (vehicle, detected 2 time(s))\n- Critical Battery Warning (16.5%) (telemetry_hazard, detected 1 time(s))\n- Dock loading worker (person, detected 1 time(s))\n- Uniformed security guard (person, detected 1 time(s))\n- White Mercedes SPRINTER (vehicle, detected 1 time(s))";
+            } else if (q.includes("how many times") || q.includes("twice") || q.includes("ford") || q.includes("f150")) {
+                output.innerText = "A blue Ford F150 entered 2 times today. Sighted at garage at 12:00 and 16:15.";
+            } else if (q.includes("midnight") || q.includes("night") || q.includes("00:")) {
+                output.innerText = "Detected 4 alert(s) during after-hours/midnight operations:\n- [ALERT] 00:01 at Main Gate: Person loitering at main gate, 00:01\n- [ALERT] 00:02 at Main Gate: Person loitering at main gate, 00:02\n- [CRITICAL] 00:03 at Main Gate: Unauthorized person attempting perimeter breach at main gate, 00:03\n- [CRITICAL] 00:10 at Fuel Depot: Critical drone battery alert (16.5%) over fuel depot, 00:10";
+            } else if (q.includes("main gate")) {
+                output.innerText = "Events recorded at Main Gate (4 occurrences):\n- Frame #7 [23:55]: Thermal camera active at main gate, 23:55.\n- Frame #8 [00:01]: Person loitering at main gate, 00:01.\n- Frame #9 [00:02]: Person loitering at main gate, 00:02.\n- Frame #10 [00:03]: Person loitering at main gate, 00:03.";
+            } else {
+                output.innerText = `Query: "${q}"\nIndexed SQLite database contains 12 frames and 6 unique entities. Try asking about 'trucks', 'main gate', 'midnight alerts', or 'objects'.`;
+            }
+        }
+
+        // Initialize at frame 2
+        renderFrame(1);
+    </script>
+</body>
+</html>
